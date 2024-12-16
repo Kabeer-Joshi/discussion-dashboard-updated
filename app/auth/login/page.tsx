@@ -17,15 +17,12 @@ import { useMutation } from "@tanstack/react-query"
 import axios from "axios"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { useAuth } from "@/hooks/use-auth"
+import Cookies from 'js-cookie'
 
 export default function LoginPage() {
   const router = useRouter()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-
-  // Use the auth hook with requireAuth = false since this is the login page
-  useAuth(false)
 
   const loginMutation = useMutation({
     mutationFn: () => {
@@ -35,8 +32,15 @@ export default function LoginPage() {
       })
     },
     onSuccess: (res) => {
-      localStorage.setItem('access_token', res.data.access)
-      localStorage.setItem('refresh_token', res.data.refresh)
+      // Set cookies
+      Cookies.set('access_token', res.data.access, {
+        sameSite: 'lax',
+        expires: 7 // 7 days
+      })
+      Cookies.set('refresh_token', res.data.refresh, {
+        sameSite: 'lax',
+        expires: 30 // 30 days
+      })
       toast.success('Login successful!')
       router.push('/')
     },

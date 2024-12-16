@@ -1,26 +1,16 @@
-import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Cookies from 'js-cookie'
 
-export function useAuth(requireAuth: boolean = true) {
+export function useAuth() {
   const router = useRouter()
 
-  useEffect(() => {
-    const accessToken = localStorage.getItem('access_token')
-
-    if (requireAuth && !accessToken) {
-      // If auth is required and no token exists, redirect to login
-      router.push('/auth/login')
-    } else if (!requireAuth && accessToken) {
-      // If we're on a non-auth page (like login) and token exists, redirect to home
-      router.push('/')
-    }
-  }, [requireAuth, router])
-
   return {
-    isAuthenticated: typeof window !== 'undefined' && !!localStorage.getItem('access_token'),
+    isAuthenticated: !!Cookies.get('access_token'),
+    getAccessToken: () => Cookies.get('access_token'),
+    getRefreshToken: () => Cookies.get('refresh_token'),
     logout: () => {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
+      Cookies.remove('access_token')
+      Cookies.remove('refresh_token')
       router.push('/auth/login')
     }
   }

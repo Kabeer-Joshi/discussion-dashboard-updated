@@ -1,117 +1,88 @@
 import axios from 'axios';
+import Cookies from 'js-cookie';
 
-const baseURL = 'https://discussionapi.goreeva.com/api/';
+const axiosInstance = axios.create({
+  baseURL: 'https://discussionapi.goreeva.com/api',
+});
 
 let isRefreshing = false;
 let refreshQueue = [];
 
-const axiosInstance = axios.create({
-  baseURL: baseURL,
-  timeout: 20000,
-  skipIntercept: false,
-  headers: {
-    'Content-Type': 'application/json',
-    accept: 'application/json',
-  },
-});
-
-axiosInstance.interceptors.request.use(async (request) => {
-  if (typeof window !== 'undefined') {
-    const accessToken = localStorage.getItem('access_token');
+// Request interceptor
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const accessToken = Cookies.get('access_token');
     if (accessToken) {
-      request.headers['Authorization'] = `Bearer ${accessToken}`;
-    } else {
-      window.location.href = '/auth/login/';
+      config.headers['Authorization'] = `Bearer ${accessToken}`;
     }
-  }
-
-  return request;
-});
-
-axiosInstance.interceptors.response.use(
-  (response) => {
-    if (response.data.status && response.data.status !== 200) {
-      throw new Error(response?.data?.message || 'Oops something went wrong! ');
-    }
-    return response;
+    return config;
   },
-  async function (error) {
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  async (error) => {
     const originalRequest = error.config;
 
-    if (typeof error.response === 'undefined') {
-      console.log(
-        'A server/network error occurred. Looks like CORS might be the problem. Sorry about this - we will get it fixed shortly.',
-      );
-      return Promise.reject(error);
-    }
-
     if (
       error.response.status === 401 &&
       error.response.statusText === 'Unauthorized' &&
-      originalRequest.url === '/token/refresh/'
+      !originalRequest._retry
     ) {
-      // Handle the case where the /token/refresh/ endpoint returns 401 (Unauthorized)
-      console.log('Refresh token expired or invalid');
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      window.location.href = '/auth/login/';
-      return Promise.reject(error);
-    }
+      if (!isRefreshing) {
+        isRefreshing = true;
+        originalRequest._retry = true;
 
-    if (
-      error.response.status === 401 &&
-      error.response.statusText === 'Unauthorized' &&
-      !axiosInstance.defaults.skipIntercept
-    ) {
-      let refreshToken = localStorage.getItem('refresh_token');
-
-      if (refreshToken) {
-        if (!isRefreshing) {
-          isRefreshing = true;
-
-          try {
-            const response = await axiosInstance.post('/token/refresh/', {
-              refresh: refreshToken,
-            });
-            console.log('Refresh response: ', response);
-
-            localStorage.setItem('access_token', response.data.access);
-            axiosInstance.defaults.headers['Authorization'] =
-              'Bearer ' + response.data.access;
-
-            // Replay the queued requests
-            refreshQueue.forEach(({ resolve, reject, request }) => {
-              request.headers['Authorization'] =
-                'Bearer ' + response.data.access;
-              axiosInstance(request).then(resolve).catch(reject);
-            });
-
-            refreshQueue = [];
-
-            isRefreshing = false;
-            return axiosInstance(originalRequest);
-          } catch (refreshError) {
-            console.log('Refresh err: ', refreshError);
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('refresh_token');
-            window.location.href = '/auth/login/';
-            return Promise.reject(error);
-          }
-        } else {
-          // Queue the request if refresh is already in progress
-          return new Promise((resolve, reject) => {
-            refreshQueue.push({ resolve, reject, request: originalRequest });
+        try {
+          const refreshToken = Cookies.get('refresh_token');
+          const response = await axiosInstance.post('/token/refresh/', {
+            refresh: refreshToken,
           });
+
+          // Update cookies with new tokens
+          Cookies.set('access_token', response.data.access, {
+            sameSite: 'lax',
+            expires: 7
+          });
+
+          // Update Authorization header
+          axiosInstance.defaults.headers['Authorization'] =
+            'Bearer ' + response.data.access
+
+          // Process refresh queue
+          refreshQueue.forEach(({ resolve, request }) => {
+            request.headers['Authorization'] = 'Bearer ' + response.data.access
+            resolve(axiosInstance(request))
+          })
+          refreshQueue = []
+
+          // Retry original request
+          originalRequest.headers['Authorization'] =
+            'Bearer ' + response.data.access
+          return axiosInstance(originalRequest)
+
+        } catch (refreshError) {
+          // Clear cookies and redirect to login
+          Cookies.remove('access_token')
+          Cookies.remove('refresh_token')
+          window.location.href = '/auth/login'
+          return Promise.reject(refreshError)
+        } finally {
+          isRefreshing = false
         }
       } else {
-        console.log('Refresh token not available.');
-        window.location.href = '/auth/login/';
+        // Queue the request if refresh is in progress
+        return new Promise((resolve) => {
+          refreshQueue.push({ resolve, request: originalRequest })
+        })
       }
     }
-
-    // specific error handling done elsewhere
-    return Promise.reject(error);
-  },
+    return Promise.reject(error)
+  }
 );
 
 export default axiosInstance;
