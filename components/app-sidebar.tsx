@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { ArchiveX, Command, File, Inbox, Send, Trash2 } from "lucide-react"
+import { ArchiveX, Command, File, Inbox, Plus, Send, Trash2 } from "lucide-react"
+import { useParams, useRouter } from "next/navigation"
 
 import { NavUser } from "@/components/nav-user"
 import { Label } from "@/components/ui/label"
@@ -18,7 +19,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { Switch } from "@/components/ui/switch"
+import { useUser } from "@/hooks/use-user"
+import { Button } from "./ui/button"
 
 // This is sample data
 const data = {
@@ -149,6 +151,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [activeItem, setActiveItem] = React.useState(data.navMain[0])
   const [mails, setMails] = React.useState(data.mails)
   const { setOpen } = useSidebar()
+  const userData = useUser()
+  const params = useParams()
+  const router = useRouter()
+  console.log(userData)
 
   return (
     <Sidebar
@@ -227,10 +233,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <div className="text-base font-medium text-foreground">
               {activeItem.title}
             </div>
-            <Label className="flex items-center gap-2 text-sm">
-              <span>Unreads</span>
-              <Switch className="shadow-none" />
-            </Label>
+            {userData?.user_type === "Professor" && (
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2"
+                onClick={() => router.push(`/classroom/${params.classId}/topic/create`)}
+              >
+                <Plus className="h-4 w-4" />
+                Add Topic
+              </Button>
+            )}
           </div>
           <SidebarInput placeholder="Type to search..." />
         </SidebarHeader>
